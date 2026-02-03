@@ -1,20 +1,23 @@
 package ru.vasilev.calorie_calculator
 
 import android.app.Application
-import ru.vasilev.di.AppComponent
-import ru.vasilev.di.DaggerAppComponent
+import ru.vasilev.calorie_calculator.di.AppComponent
+// Импорт должен указывать на сгенерированный код в том же пакете, что и AppComponent
+import ru.vasilev.calorie_calculator.di.DaggerAppComponent
 
 class App : Application() {
 
-    // Граф зависимостей, который будет доступен во всем приложении
-    lateinit var appComponent: AppComponent
-        private set
+    // Сделаем доступ удобнее через статическое поле (опционально, но часто используется)
+    companion object {
+        lateinit var appComponent: AppComponent
+            private set
+    }
 
     override fun onCreate() {
         super.onCreate()
 
-        // Инициализируем Dagger компонент
-        // Если DaggerAppComponent подсвечен красным — нажми Build -> Rebuild Project
-        appComponent = DaggerAppComponent.factory().create(applicationContext)
+        // Инициализируем компонент через Factory
+        appComponent = DaggerAppComponent.factory()
+            .create(this) // Передаем сам экземпляр Application (он же Context)
     }
 }

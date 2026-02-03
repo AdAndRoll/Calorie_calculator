@@ -45,7 +45,6 @@ dependencies {
     implementation(project(":domain"))
     implementation(project(":data"))
     implementation(project(":util"))
-    implementation(project(":ui"))
 
     // Dagger 2
     implementation(libs.dagger)

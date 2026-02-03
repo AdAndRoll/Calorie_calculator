@@ -23,14 +23,21 @@ class MainViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    /**
-     * Принимает Any (Uri или Bitmap) и запускает процесс сжатия и отправки
-     */
+    // Метод для переключения протокола
+    fun onProtocolChanged(protocol: ProtocolType) {
+        _uiState.value = _uiState.value.copy(selectedProtocol = protocol)
+    }
+
     fun onImageSelected(input: Any) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, statusText = "Сжатие изображения...")
+            val currentProtocol = _uiState.value.selectedProtocol // Берем из стейта
 
-            // 1. Сжатие согласно Пункту 2.3 ТЗ
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                statusText = "Сжатие для ${currentProtocol.name}...",
+                result = null
+            )
+
             val bytes = when (input) {
                 is Bitmap -> imageCompressor.compressFromBitmap(input)
                 is Uri -> imageCompressor.compressFromUri(input)
@@ -38,18 +45,14 @@ class MainViewModel @Inject constructor(
             }
 
             if (bytes == null) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    statusText = "Ошибка оптимизации фото"
-                )
+                _uiState.value = _uiState.value.copy(isLoading = false, statusText = "Ошибка сжатия")
                 return@launch
             }
 
-            // 2. Отправка и обработка состояний (Пункт 2.4.2 ТЗ)
             processImageUseCase(
                 imageBytes = bytes,
-                description = "Photo from App",
-                protocol = ProtocolType.REST // Пока REST, скоро добавим SOAP
+                description = "Photo via ${currentProtocol.name}",
+                protocol = currentProtocol // Используем выбранный протокол
             ).collectLatest { status ->
                 handleStatusUpdate(status)
             }
@@ -58,27 +61,11 @@ class MainViewModel @Inject constructor(
 
     private fun handleStatusUpdate(status: ImageStatus) {
         _uiState.value = when (status) {
-            is ImageStatus.Idle -> _uiState.value.copy(
-                isLoading = false,
-                statusText = "Ожидание..."
-            )
-            is ImageStatus.Uploading -> _uiState.value.copy(
-                isLoading = true,
-                statusText = "Загрузка на сервер..."
-            )
-            is ImageStatus.Polling -> _uiState.value.copy(
-                isLoading = true,
-                statusText = "Опрос статуса (попытка ${status.retryCount})"
-            )
-            is ImageStatus.Success -> _uiState.value.copy(
-                isLoading = false,
-                statusText = "Анализ завершен",
-                result = status.jsonResponse
-            )
-            is ImageStatus.Error -> _uiState.value.copy(
-                isLoading = false,
-                statusText = "Ошибка: ${status.message}"
-            )
+            is ImageStatus.Idle -> _uiState.value.copy(isLoading = false, statusText = "Ожидание...")
+            is ImageStatus.Uploading -> _uiState.value.copy(isLoading = true, statusText = "Загрузка...")
+            is ImageStatus.Polling -> _uiState.value.copy(isLoading = true, statusText = "Опрос (${status.retryCount})")
+            is ImageStatus.Success -> _uiState.value.copy(isLoading = false, statusText = "Готово", result = status.jsonResponse)
+            is ImageStatus.Error -> _uiState.value.copy(isLoading = false, statusText = "Ошибка: ${status.message}")
         }
     }
 }

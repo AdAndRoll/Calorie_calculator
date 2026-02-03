@@ -20,6 +20,8 @@ composeBom = "2026.01.01" # Или актуальная на данный мом
 androidxActivityCompose = "1.12.3"
 androidxLifecycle = "2.10.0"
 
+
+
 [libraries]
 
 # Compose BOM - управляет версиями всех библиотек compose

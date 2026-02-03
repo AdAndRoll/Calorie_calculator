@@ -12,37 +12,86 @@ import javax.inject.Singleton
 class ImageCompressor @Inject constructor(
     private val context: Context
 ) {
+
+    companion object {
+        private const val MAX_SIZE_BYTES = 10 * 1024 * 1024L // 10 MB по ТЗ
+        private const val INITIAL_QUALITY = 90
+        private const val MIN_QUALITY = 20
+        private const val STEP_QUALITY = 10
+    }
+
     /**
-     * Сжимает изображение из Uri до ByteArray.
-     * Реализует пункт 2.3 ТЗ: Оптимизация и лимит 10МБ.
+     * Точка входа для Uri (Галерея)
      */
-    fun compressImageWithLimit(uri: Uri, limitBytes: Long = 10 * 1024 * 1024): ByteArray? {
+    fun compressFromUri(uri: Uri): ByteArray? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                // Декодируем изображение
-                val originalBitmap = BitmapFactory.decodeStream(inputStream) ?: return null
-
-                var quality = 80
-                var result: ByteArray
-                val outputStream = ByteArrayOutputStream()
-
-                // Сжимаем (пункт 2.3: Оптимизация)
-                originalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-                result = outputStream.toByteArray()
-
-                // Если вдруг файл все еще больше лимита, пробуем снизить качество (агрессивная оптимизация)
-                while (result.size > limitBytes && quality > 20) {
-                    outputStream.reset()
-                    quality -= 10
-                    originalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-                    result = outputStream.toByteArray()
-                }
-
-                if (result.size <= limitBytes) result else null
+                val bitmap = BitmapFactory.decodeStream(inputStream) ?: return null
+                compress(bitmap)
             }
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
+    }
+
+    /**
+     * Точка входа для Bitmap (Камера)
+     */
+    fun compressFromBitmap(bitmap: Bitmap): ByteArray? {
+        return compress(bitmap)
+    }
+
+    /**
+     * Основная логика сжатия и оптимизации (Пункт 2.3 ТЗ)
+     */
+    private fun compress(bitmap: Bitmap): ByteArray? {
+        var currentBitmap = bitmap
+        var quality = INITIAL_QUALITY
+        val outputStream = ByteArrayOutputStream()
+
+        try {
+            // 1. Первая попытка сжатия
+            currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+            var result = outputStream.toByteArray()
+
+            // 2. Если размер превышен, сначала агрессивно уменьшаем разрешение (Scale)
+            // Это эффективнее, чем просто снижать качество до 0
+            if (result.size > MAX_SIZE_BYTES) {
+                currentBitmap = scaleDown(currentBitmap, 2000) // ограничиваем сторону 2000px
+            }
+
+            // 3. Цикл оптимизации качества (Пункт 2.3 ТЗ)
+            while (result.size > MAX_SIZE_BYTES && quality > MIN_QUALITY) {
+                outputStream.reset()
+                quality -= STEP_QUALITY
+                currentBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+                result = outputStream.toByteArray()
+            }
+
+            return if (result.size <= MAX_SIZE_BYTES) result else null
+
+        } finally {
+            outputStream.close()
+        }
+    }
+
+    /**
+     * Оптимизация: уменьшение физического размера изображения
+     */
+    private fun scaleDown(realBitmap: Bitmap, maxResolution: Int): Bitmap {
+        val ratio = realBitmap.width.toFloat() / realBitmap.height.toFloat()
+        val width: Int
+        val height: Int
+
+        if (realBitmap.width > realBitmap.height) {
+            width = maxResolution
+            height = (maxResolution / ratio).toInt()
+        } else {
+            height = maxResolution
+            width = (maxResolution * ratio).toInt()
+        }
+
+        return Bitmap.createScaledBitmap(realBitmap, width, height, true)
     }
 }

@@ -13,18 +13,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import ru.vasilev.calorie_calculator.util.toRawBytes
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // 1. Лаунчер для камеры
+    // 1. Лаунчер для камеры (возвращает Bitmap)
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
-        bitmap?.toRawBytes()?.let { viewModel.onImageSelected(it) }
+        // Передаем Bitmap напрямую во ViewModel
+        bitmap?.let { viewModel.onImageSelected(it) }
     }
 
     // 2. Лаунчер для запроса разрешения камеры
@@ -38,11 +38,12 @@ fun MainScreen(viewModel: MainViewModel) {
         }
     }
 
-    // 3. Лаунчер для галереи
+    // 3. Лаунчер для галереи (возвращает Uri)
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.toRawBytes(context)?.let { viewModel.onImageSelected(it) }
+        // Передаем Uri напрямую во ViewModel
+        uri?.let { viewModel.onImageSelected(it) }
     }
 
     Scaffold { padding ->
@@ -53,6 +54,7 @@ fun MainScreen(viewModel: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Статус процесса (ТЗ 2.4.2 - Polling/Uploading)
             Text(
                 text = uiState.statusText,
                 style = MaterialTheme.typography.headlineSmall,
@@ -61,15 +63,16 @@ fun MainScreen(viewModel: MainViewModel) {
 
             if (uiState.result != null) {
                 Spacer(modifier = Modifier.height(8.dp))
+                // Здесь будет отображаться JSON результат или калории (ТЗ 2.1)
                 Text(
                     text = "Результат: ${uiState.result}",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // Кнопка Галереи
+            // Кнопка Галереи (ТЗ 2.3)
             Button(
                 onClick = { galleryLauncher.launch("image/*") },
                 enabled = !uiState.isLoading,
@@ -80,7 +83,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Кнопка Камеры с проверкой разрешений
+            // Кнопка Камеры (ТЗ 2.3)
             Button(
                 onClick = {
                     val permissionCheck = ContextCompat.checkSelfPermission(
@@ -99,6 +102,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 Text("Сделать фото")
             }
 
+            // Индикация загрузки и опроса статуса (ТЗ 2.4.2)
             if (uiState.isLoading) {
                 Spacer(modifier = Modifier.height(16.dp))
                 CircularProgressIndicator()

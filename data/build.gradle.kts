@@ -38,6 +38,9 @@ dependencies {
     implementation(project(":domain"))
     implementation(project(":util"))
 
+    implementation(libs.simple.xml)
+    implementation(libs.retrofit.simplexml)
+
     // Network: Retrofit
     api(libs.retrofit)
     api(libs.retrofit.gson)

@@ -20,9 +20,12 @@ composeBom = "2026.01.01" # Или актуальная на данный мом
 androidxActivityCompose = "1.12.3"
 androidxLifecycle = "2.10.0"
 
-
+simple-xml = "2.7.1"
 
 [libraries]
+
+retrofit-simplexml = { group = "com.squareup.retrofit2", name = "converter-simplexml", version.ref = "retrofit" }
+simple-xml = { group = "org.simpleframework", name = "simple-xml", version.ref = "simple-xml" }
 
 # Compose BOM - управляет версиями всех библиотек compose
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

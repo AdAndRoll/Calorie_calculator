@@ -23,38 +23,54 @@ class MainViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    // Метод для переключения протокола
+    // Храним ссылку на текущую работу, чтобы отменить её при новом выборе
+    private var currentJob: kotlinx.coroutines.Job? = null
+
     fun onProtocolChanged(protocol: ProtocolType) {
         _uiState.value = _uiState.value.copy(selectedProtocol = protocol)
     }
 
     fun onImageSelected(input: Any) {
-        viewModelScope.launch {
-            val currentProtocol = _uiState.value.selectedProtocol // Берем из стейта
+        // Отменяем предыдущую загрузку, если она еще идет (защита от частых кликов)
+        currentJob?.cancel()
 
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                statusText = "Сжатие для ${currentProtocol.name}...",
-                result = null
-            )
+        currentJob = viewModelScope.launch {
+            try {
+                val currentProtocol = _uiState.value.selectedProtocol
 
-            val bytes = when (input) {
-                is Bitmap -> imageCompressor.compressFromBitmap(input)
-                is Uri -> imageCompressor.compressFromUri(input)
-                else -> null
-            }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = true,
+                    statusText = "Сжатие для ${currentProtocol.name}...",
+                    result = null
+                )
 
-            if (bytes == null) {
-                _uiState.value = _uiState.value.copy(isLoading = false, statusText = "Ошибка сжатия")
-                return@launch
-            }
+                val bytes = when (input) {
+                    is Bitmap -> imageCompressor.compressFromBitmap(input)
+                    is Uri -> imageCompressor.compressFromUri(input)
+                    else -> null
+                }
 
-            processImageUseCase(
-                imageBytes = bytes,
-                description = "Photo via ${currentProtocol.name}",
-                protocol = currentProtocol // Используем выбранный протокол
-            ).collectLatest { status ->
-                handleStatusUpdate(status)
+                if (bytes == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, statusText = "Ошибка сжатия")
+                    return@launch
+                }
+
+                // collectLatest автоматически отменит обработку старого статуса при приходе нового
+                processImageUseCase(
+                    imageBytes = bytes,
+                    description = "Photo via ${currentProtocol.name}",
+                    protocol = currentProtocol
+                ).collectLatest { status ->
+                    handleStatusUpdate(status)
+                }
+
+            } catch (e: Exception) {
+                // Если возникла любая системная ошибка (например, файл не читается)
+                // Программа не вылетит, а просто покажет ошибку и разблокирует кнопки
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    statusText = "Критическая ошибка: ${e.localizedMessage}"
+                )
             }
         }
     }

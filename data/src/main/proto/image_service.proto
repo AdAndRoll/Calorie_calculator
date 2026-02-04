@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option java_package = "ru.vasilev.data.grpc";
+option java_multiple_files = true;
+
+service ImageService {
+  // Обычный запрос на загрузку
+  rpc ProcessImage (ImageRequest) returns (ImageResponse);
+
+  // Серверный стрим для получения обновлений (ТЗ 2.4.2)
+  rpc WatchStatus (StatusRequest) returns (stream StatusResponse);
+}
+
+message ImageRequest {
+  bytes image_data = 1;
+  string description = 2;
+}
+
+message ImageResponse {
+  string id = 1;
+}
+
+message StatusRequest {
+  string id = 1;
+}
+
+message StatusResponse {
+  string status = 1; // "processing", "completed", "error"
+  string result = 2; // JSON результат
+}

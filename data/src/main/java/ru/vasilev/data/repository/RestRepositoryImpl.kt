@@ -22,47 +22,43 @@ class RestRepositoryImpl @Inject constructor(
         protocol: ProtocolType
     ): Flow<ImageStatus> = flow {
 
-        // 1. Начало загрузки
+        // 1. Статус начала
         emit(ImageStatus.Uploading)
 
-        try {
-            // Подготовка Multipart (Пункт 2.3 ТЗ)
-            val requestFile = imageBytes.toRequestBody("image/jpeg".toMediaType())
-            val body = MultipartBody.Part.createFormData("image", "upload.jpg", requestFile)
+        // Подготовка данных
+        val requestFile = imageBytes.toRequestBody("image/jpeg".toMediaType())
+        val body = MultipartBody.Part.createFormData("image", "upload.jpg", requestFile)
+        val metadata = """{"description":"$description"}""".toRequestBody("application/json".toMediaType())
 
-            // Метаданные как RequestBody (JSON по ТЗ)
-            val metadata = """{"description":"$description"}""".toRequestBody("application/json".toMediaType())
+        // 2. Выполняем запрос (без try-catch здесь!)
+        // Если API выкинет IOException (нет сети) или 500 ошибку,
+        // Flow прервется и сработает наш внешний Retry Backoff.
+        val uploadResponse = api.uploadImage(body, metadata)
+        val requestId = uploadResponse.id
 
-            // 2. Выполняем запрос
-            val uploadResponse = api.uploadImage(body, metadata)
-            val requestId = uploadResponse.id
+        // 3. Polling
+        var isCompleted = false
+        var retryCount = 0
 
-            // 3. Запускаем Polling (Пункт 2.4.2 ТЗ: интервал 1 сек)
-            var isCompleted = false
-            var retryCount = 0
+        while (!isCompleted) {
+            emit(ImageStatus.Polling(retryCount))
 
-            while (!isCompleted) {
-                emit(ImageStatus.Polling(retryCount))
+            // Опрос статуса
+            val statusUpdate = api.checkStatus(requestId)
 
-                val statusUpdate = api.checkStatus(requestId)
-
-                if (statusUpdate.status == "completed") {
-                    emit(ImageStatus.Success(
-                        jsonResponse = statusUpdate.result ?: "{}",
-                        imageUri = "" // Можно добавить логику получения ссылки
-                    ))
-                    isCompleted = true
-                } else {
-                    delay(1000) // Ждем 1 секунду перед следующим опросом
-                    retryCount++
-                }
-
-                // Опционально: добавить проверку на таймаут (например, 5 минут)
-                if (retryCount > 300) throw Exception("Timeout")
+            if (statusUpdate.status == "completed") {
+                emit(ImageStatus.Success(
+                    jsonResponse = statusUpdate.result ?: "{}",
+                    imageUri = ""
+                ))
+                isCompleted = true
+            } else {
+                delay(1000)
+                retryCount++
             }
 
-        } catch (e: Exception) {
-            emit(ImageStatus.Error(e.localizedMessage ?: "Unknown error"))
+            // Защитный таймаут опроса
+            if (retryCount > 300) throw Exception("Превышено время ожидания обработки (300c) ")
         }
     }
 }

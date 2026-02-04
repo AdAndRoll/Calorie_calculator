@@ -21,59 +21,57 @@ class SoapRepositoryImpl @Inject constructor(
         protocol: ProtocolType
     ): Flow<ImageStatus> = flow {
 
+        // 1. Статус начала
         emit(ImageStatus.Uploading)
 
-        try {
-            // 1. Кодируем изображение в Base64 (ТЗ 2.4.1)
-            val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        // Кодируем изображение (ТЗ 2.4.1)
+        val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
-            // 2. Создаем Envelope для отправки
-            val requestEnvelope = ProcessImageRequestEnvelope(
-                body = ProcessImageRequestBody(
-                    request = ProcessImageRequest(
-                        imageBase64 = base64Image,
-                        description = description
+        // 2. Создаем Envelope и отправляем
+        // Мы убрали try-catch. Если soapApi выкинет ошибку сети,
+        // внешний retryWithExponentialBackoff перехватит её.
+        val requestEnvelope = ProcessImageRequestEnvelope(
+            body = ProcessImageRequestBody(
+                request = ProcessImageRequest(
+                    imageBase64 = base64Image,
+                    description = description
+                )
+            )
+        )
+
+        val responseEnvelope = soapApi.processImage(requestEnvelope)
+        val requestId = responseEnvelope.body.response.id
+
+        // 3. Polling (Опрос статуса)
+        var isCompleted = false
+        var retryCount = 0
+
+        while (!isCompleted) {
+            emit(ImageStatus.Polling(retryCount))
+
+            val statusEnvelope = soapApi.checkStatus(
+                CheckStatusRequestEnvelope(
+                    body = CheckStatusRequestBody(
+                        request = CheckStatusRequest(id = requestId)
                     )
                 )
             )
 
-            // 3. Отправляем запрос
-            val responseEnvelope = soapApi.processImage(requestEnvelope)
-            val requestId = responseEnvelope.body.response.id
+            val response = statusEnvelope.body.response
 
-            // 4. Polling (Опрос статуса)
-            var isCompleted = false
-            var retryCount = 0
-
-            while (!isCompleted) {
-                emit(ImageStatus.Polling(retryCount))
-
-                val statusEnvelope = soapApi.checkStatus(
-                    CheckStatusRequestEnvelope(
-                        body = CheckStatusRequestBody(
-                            request = CheckStatusRequest(id = requestId)
-                        )
-                    )
-                )
-
-                val response = statusEnvelope.body.response
-
-                if (response.status == "completed") {
-                    emit(ImageStatus.Success(
-                        jsonResponse = response.result ?: "{}",
-                        imageUri = ""
-                    ))
-                    isCompleted = true
-                } else {
-                    delay(1000) // Задержка 1 сек по ТЗ
-                    retryCount++
-                }
-
-                if (retryCount > 300) throw Exception("SOAP Timeout")
+            if (response.status == "completed") {
+                emit(ImageStatus.Success(
+                    jsonResponse = response.result ?: "{}",
+                    imageUri = ""
+                ))
+                isCompleted = true
+            } else {
+                delay(1000) // Интервал 1 сек по ТЗ
+                retryCount++
             }
 
-        } catch (e: Exception) {
-            emit(ImageStatus.Error("SOAP Error: ${e.localizedMessage}"))
+            // Защитный таймаут опроса (например, 1 минута)
+            if (retryCount > 300) throw Exception("SOAP Polling Timeout (300 s)")
         }
     }
 }
